@@ -1,0 +1,465 @@
+openapi: 3.0.0
+info:
+  title: Crypto Market Connector API
+  description: |
+    A high-performance, multi-provider cryptocurrency order book aggregation API.
+
+    This API provides unified access to real-time order book data from multiple
+    cryptocurrency exchanges including Binance, Crypto.com, and Coinbase.
+
+    ## Features
+    - Multi-provider support with consistent response format
+    - Real-time order book data (bids and asks)
+    - Configurable market depth
+    - Concurrent requests to multiple providers
+    - Structured error handling and logging
+
+    ## Authentication
+    This API uses environment-based authentication. API credentials are
+    configured server-side and not required in requests.
+
+    ## Rate Limiting
+    Rate limits are determined by the underlying exchange APIs.
+    Check each provider's documentation for specific limits.
+  version: 0.1.0
+  contact:
+    name: Crypto Market Connector Support
+    url: https://github.com/tejasvi-mehra/crypto-market-connector
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.example.com
+    description: Production server (example)
+
+tags:
+  - name: Order Book
+    description: Endpoints for fetching order book data
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /get_pair_price:
+    post:
+      tags:
+        - Order Book
+      summary: Get order book from a single provider
+      description: |
+        Fetches the current order book (bids and asks) for a trading pair
+        from a specific cryptocurrency exchange provider.
+
+        The response includes market depth data formatted as lists of
+        [price, quantity] tuples, ordered from best to worst prices.
+      operationId: getSingleProviderOrderBook
+      requestBody:
+        description: Order book request parameters
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrderBookRequest"
+            examples:
+              BinanceExample:
+                summary: Fetch BTC/USDT from Binance with depth 10
+                value:
+                  provider: binance
+                  base: BTC
+                  quote: USDT
+                  depth: 10
+              CoinbaseExample:
+                summary: Fetch ETH/USD from Coinbase
+                value:
+                  provider: coinbase
+                  base: ETH
+                  quote: USD
+                  depth: null
+              CryptoComExample:
+                summary: Fetch XRP/USDT from Crypto.com
+                value:
+                  provider: crypto.com
+                  base: XRP
+                  quote: USDT
+                  depth: 20
+      responses:
+        "200":
+          description: Successfully retrieved order book data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrderBookResponse"
+              examples:
+                SuccessExample:
+                  summary: Sample successful response
+                  value:
+                    provider: binance
+                    pair: BTCUSDT
+                    bids:
+                      - [ "42500.00", "1.5000" ]
+                      - [ "42499.50", "2.0000" ]
+                      - [ "42499.00", "0.5000" ]
+                    asks:
+                      - [ "42510.00", "1.2000" ]
+                      - [ "42510.50", "3.0000" ]
+                      - [ "42511.00", "2.5000" ]
+        "400":
+          description: Bad request - invalid parameters or unsupported provider
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                UnsupportedProvider:
+                  summary: Provider not supported
+                  value:
+                    error: "unsupported provider: unknown_exchange"
+                InvalidRequest:
+                  summary: Invalid request parameters
+                  value:
+                    error: "invalid request: missing required fields"
+        "502":
+          description: Bad Gateway - error from upstream provider API
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                ProviderError:
+                  summary: Error from external provider
+                  value:
+                    error: "backend error: crypto.com error code=50001 method=get_book
+                      message=INVALID_INSTRUMENT"
+        "503":
+          description: Service Unavailable - temporary service issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                ServiceUnavailable:
+                  summary: Service temporarily unavailable
+                  value:
+                    error: "service temporarily unavailable"
+
+  /get_all_books:
+    post:
+      tags:
+        - Order Book
+      summary: Get order books from all providers
+      description: |
+        Fetches order book data from ALL available cryptocurrency exchange providers
+        concurrently. Each provider query is independent and can either succeed or fail.
+
+        The response is a map where each key is the provider name and the value
+        contains either the order book data or an error message.
+
+        This endpoint is useful for:
+        - Comparing prices across exchanges
+        - Identifying arbitrage opportunities
+        - Market analysis and monitoring
+      operationId: getAllProvidersOrderBooks
+      requestBody:
+        description: Trading pair parameters (no provider specified)
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProviderBookRequest"
+            examples:
+              BasicExample:
+                summary: Fetch BTC/USDT from all providers
+                value:
+                  base: BTC
+                  quote: USDT
+                  depth: null
+              DepthExample:
+                summary: Fetch ETH/USD from all providers with depth 20
+                value:
+                  base: ETH
+                  quote: USD
+                  depth: 20
+      responses:
+        "200":
+          description: Successfully retrieved order books from all providers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MultiProviderOrderBooks"
+              examples:
+                SuccessExample:
+                  summary: Sample multi-provider response
+                  value:
+                    binance:
+                      success: true
+                      data:
+                        provider: binance
+                        pair: BTCUSDT
+                        bids:
+                          - [ "42500.00", "1.5000" ]
+                          - [ "42499.50", "2.0000" ]
+                        asks:
+                          - [ "42510.00", "1.2000" ]
+                          - [ "42510.50", "3.0000" ]
+                      error: null
+                    crypto.com:
+                      success: true
+                      data:
+                        provider: crypto_com
+                        pair: BTC_USDT
+                        bids:
+                          - [ "42505.00", "0.8000" ]
+                          - [ "42504.50", "1.2000" ]
+                        asks:
+                          - [ "42515.00", "0.9000" ]
+                          - [ "42515.50", "1.5000" ]
+                      error: null
+                    coinbase:
+                      success: false
+                      data: null
+                      error: "backend error: Pair not found on Coinbase"
+        "400":
+          description: Bad request - invalid parameters
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              examples:
+                InvalidRequest:
+                  summary: Invalid trading pair
+                  value:
+                    error: "invalid request: base and quote currencies are required"
+        "503":
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+components:
+  schemas:
+    OrderBookRequest:
+      type: object
+      description: Request to fetch order book from a specific provider
+      required:
+        - provider
+        - base
+        - quote
+      properties:
+        provider:
+          type: string
+          description: The cryptocurrency exchange provider name
+          enum:
+            - binance
+            - crypto.com
+            - coinbase
+          example: binance
+        base:
+          type: string
+          description: Base currency symbol (e.g., BTC, ETH, XRP)
+          example: BTC
+          minLength: 1
+          maxLength: 20
+        quote:
+          type: string
+          description: Quote currency symbol (e.g., USDT, USD, USDC)
+          example: USDT
+          minLength: 1
+          maxLength: 20
+        depth:
+          type: integer
+          description: |
+            Maximum number of bids/asks to return. If not specified,
+            the provider's default depth is used.
+          nullable: true
+          example: 10
+          minimum: 1
+          maximum: 5000
+      example:
+        provider: binance
+        base: BTC
+        quote: USDT
+        depth: 10
+
+    ProviderBookRequest:
+      type: object
+      description: Request to fetch order books from all providers
+      required:
+        - base
+        - quote
+      properties:
+        base:
+          type: string
+          description: Base currency symbol (e.g., BTC, ETH, XRP)
+          example: BTC
+          minLength: 1
+          maxLength: 20
+        quote:
+          type: string
+          description: Quote currency symbol (e.g., USDT, USD, USDC)
+          example: USDT
+          minLength: 1
+          maxLength: 20
+        depth:
+          type: integer
+          description: |
+            Maximum number of bids/asks to return from each provider.
+            If not specified, the provider's default depth is used.
+          nullable: true
+          example: 10
+          minimum: 1
+          maximum: 5000
+      example:
+        base: BTC
+        quote: USDT
+        depth: 10
+
+    OrderBook:
+      type: array
+      description: List of price-quantity pairs
+      items:
+        type: array
+        minItems: 2
+        maxItems: 2
+        items:
+          type: string
+          description: Price as a string (preserves precision)
+          example: "42500.00"
+
+    OrderBookResponse:
+      type: object
+      description: Order book data for a trading pair from a specific provider
+      required:
+        - provider
+        - pair
+        - bids
+        - asks
+      properties:
+        provider:
+          type: string
+          description: The provider name
+          enum:
+            - binance
+            - crypto_com
+            - coinbase
+          example: binance
+        pair:
+          type: string
+          description: The trading pair symbol in provider-specific format
+          example: BTCUSDT
+        bids:
+          $ref: "#/components/schemas/OrderBook"
+          description: Bids (buy orders) from highest price to lowest
+        asks:
+          $ref: "#/components/schemas/OrderBook"
+          description: Asks (sell orders) from lowest price to highest
+      example:
+        provider: binance
+        pair: BTCUSDT
+        bids:
+          - [ "42500.00", "1.5000" ]
+          - [ "42499.50", "2.0000" ]
+          - [ "42499.00", "0.5000" ]
+        asks:
+          - [ "42510.00", "1.2000" ]
+          - [ "42510.50", "3.0000" ]
+          - [ "42511.00", "2.5000" ]
+
+    ProviderBookResult:
+      type: object
+      description: Result of a single provider query (success or failure)
+      required:
+        - success
+        - data
+        - error
+      properties:
+        success:
+          type: boolean
+          description: Whether the query was successful
+          example: true
+        data:
+          $ref: "#/components/schemas/OrderBookResponse"
+          nullable: true
+          description: Order book data (null if query failed)
+        error:
+          type: string
+          nullable: true
+          description: Error message (null if query succeeded)
+          example: null
+      example:
+        success: true
+        data:
+          provider: binance
+          pair: BTCUSDT
+          bids:
+            - [ "42500.00", "1.5000" ]
+          asks:
+            - [ "42510.00", "1.2000" ]
+        error: null
+
+    MultiProviderOrderBooks:
+      type: object
+      description: |
+        Map of provider names to their order book results.
+        Keys are the provider names (binance, crypto.com, coinbase).
+        Each provider can either have succeeded (success=true, data populated)
+        or failed (success=false, error populated).
+      additionalProperties:
+        $ref: "#/components/schemas/ProviderBookResult"
+      example:
+        binance:
+          success: true
+          data:
+            provider: binance
+            pair: BTCUSDT
+            bids:
+              - [ "42500.00", "1.5000" ]
+            asks:
+              - [ "42510.00", "1.2000" ]
+          error: null
+        crypto.com:
+          success: true
+          data:
+            provider: crypto_com
+            pair: BTC_USDT
+            bids:
+              - [ "42505.00", "0.8000" ]
+            asks:
+              - [ "42515.00", "0.9000" ]
+          error: null
+
+    ErrorResponse:
+      type: object
+      description: Error response from the API
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Detailed error message
+          example: "unsupported provider: xyz"
+      example:
+        error: "unsupported provider: xyz"
+
+  responses:
+    BadRequest:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    InternalError:
+      description: Internal server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+    ServiceUnavailable:
+      description: Service temporarily unavailable
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
