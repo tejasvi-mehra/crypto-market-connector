@@ -39,7 +39,10 @@ impl BinanceClient {
         // Load Binance API configuration from environment variables
         let config: Config = match envy::from_env::<Config>() {
             Ok(cfg) => {
-                log::debug!("Successfully loaded Binance configuration for environment: {}", cfg.environment);
+                log::debug!(
+                    "Successfully loaded Binance configuration for environment: {}",
+                    cfg.environment
+                );
                 cfg
             }
             Err(error) => {
@@ -58,7 +61,10 @@ impl BinanceClient {
                 panic!("Failed to create Binance configuration: {}", e)
             });
 
-        log::debug!("Creating Binance REST API client for environment: {}", config.environment);
+        log::debug!(
+            "Creating Binance REST API client for environment: {}",
+            config.environment
+        );
         let client = match config.environment.as_str() {
             "testnet" => {
                 log::info!("Using Binance testnet environment");
@@ -69,7 +75,10 @@ impl BinanceClient {
                 SpotRestApi::production(binance_config)
             }
             _ => {
-                log::error!("Invalid Binance environment: {}. Use 'testnet' or 'production'.", config.environment);
+                log::error!(
+                    "Invalid Binance environment: {}. Use 'testnet' or 'production'.",
+                    config.environment
+                );
                 std::process::exit(1);
             }
         };
@@ -87,7 +96,11 @@ impl BinanceClient {
         let pair = format!("{}{}", request.base, request.quote);
         let depth: Option<i32> = request.depth.map(|d| d as i32);
 
-        log::info!("Fetching order book from Binance for pair: {}, depth: {:?}", pair, depth);
+        log::info!(
+            "Fetching order book from Binance for pair: {}, depth: {:?}",
+            pair,
+            depth
+        );
 
         // Make API call to get depth data
         log::debug!("Making depth API call to Binance for symbol: {}", pair);
@@ -106,16 +119,16 @@ impl BinanceClient {
 
         // Extract data from response
         log::debug!("Extracting depth data from Binance response");
-        let depth_data = response
-            .data()
-            .await
-            .map_err(|e| {
-                log::error!("Failed to extract depth data from Binance response: {}", e);
-                ProviderError::BackendError(e.to_string())
-            })?;
+        let depth_data = response.data().await.map_err(|e| {
+            log::error!("Failed to extract depth data from Binance response: {}", e);
+            ProviderError::BackendError(e.to_string())
+        })?;
 
         // Process bids
-        log::debug!("Processing {} bids from Binance response", depth_data.bids.as_ref().map_or(0, |b| b.len()));
+        log::debug!(
+            "Processing {} bids from Binance response",
+            depth_data.bids.as_ref().map_or(0, |b| b.len())
+        );
         let bids = depth_data
             .bids
             .unwrap_or_default()
@@ -131,7 +144,10 @@ impl BinanceClient {
             .collect();
 
         // Process asks
-        log::debug!("Processing {} asks from Binance response", depth_data.asks.as_ref().map_or(0, |a| a.len()));
+        log::debug!(
+            "Processing {} asks from Binance response",
+            depth_data.asks.as_ref().map_or(0, |a| a.len())
+        );
         let asks = depth_data
             .asks
             .unwrap_or_default()
@@ -146,7 +162,10 @@ impl BinanceClient {
             })
             .collect();
 
-        log::info!("Successfully processed order book from Binance for pair: {}", pair);
+        log::info!(
+            "Successfully processed order book from Binance for pair: {}",
+            pair
+        );
         Ok(OrderBookResponse {
             provider: "binance".to_string(),
             pair: pair.clone(),
@@ -165,7 +184,10 @@ impl ProviderClient for BinanceClient {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<OrderBookResponse, ProviderError>> + Send + '_>,
     > {
-        log::debug!("ProviderClient trait called for Binance with request: {:?}", request);
+        log::debug!(
+            "ProviderClient trait called for Binance with request: {:?}",
+            request
+        );
         Box::pin(async move { self.fetch_latest_order_book(request).await })
     }
 }
