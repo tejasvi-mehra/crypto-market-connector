@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 // Request structure for fetching order book from a specific provider.
 // Contains provider name and trading pair information.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OrderBookRequest {
     pub provider: String,
     pub base: String,
@@ -22,7 +22,7 @@ pub struct OrderBookResponse {
 
 // Request structure for provider-specific order book fetching.
 // Used internally when dispatching to individual provider clients.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct ProviderBookRequest {
     pub base: String,
     pub quote: String,
