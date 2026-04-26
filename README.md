@@ -7,7 +7,7 @@ A high-performance, multi-provider cryptocurrency order book aggregation API bui
 Crypto Market Connector is designed to provide a simple, extensible interface for fetching real-time order book data from multiple cryptocurrency exchanges. It uses a provider-based architecture that makes it easy to add new exchange providers without modifying the core business logic.
 
 **Key Features:**
-- 🔄 Multi-provider support (Binance, Crypto.com)
+- 🔄 Multi-provider support (Binance, Crypto.com, Coinbase)
 - ⚡ Async/await with Tokio for high concurrency
 - 🔌 Extensible provider trait for easy integration of new exchanges
 - 📝 Comprehensive structured logging with canonical log crate
@@ -36,11 +36,13 @@ graph TB
         Registry["Provider Registry<br/>(Client Map)"]
         BinanceImpl["BinanceClient<br/>(ProviderClient)"]
         CryptoComImpl["CryptoComClient<br/>(ProviderClient)"]
+        CoinbaseImpl["CoinbaseClient<br/>(ProviderClient)"]
     end
     
     subgraph "External APIs"
         BinanceAPI["Binance API<br/>(REST)"]
         CryptoComAPI["Crypto.com API<br/>(REST)"]
+        CoinbaseAPI["Coinbase API<br/>(REST)"]
     end
     
     Client -->|HTTP POST| Middleware
@@ -50,12 +52,16 @@ graph TB
     Gateway -->|Query| Registry
     Registry -->|Route to| BinanceImpl
     Registry -->|Route to| CryptoComImpl
+    Registry -->|Route to| CoinbaseImpl
     BinanceImpl -->|Fetch Data| BinanceAPI
     CryptoComImpl -->|Fetch Data| CryptoComAPI
+    CoinbaseImpl -->|Fetch Data| CoinbaseAPI
     BinanceAPI -->|Response| BinanceImpl
     CryptoComAPI -->|Response| CryptoComImpl
+    CoinbaseAPI -->|Response| CoinbaseImpl
     BinanceImpl -->|OrderBookResponse| Router
     CryptoComImpl -->|OrderBookResponse| Router
+    CoinbaseImpl -->|OrderBookResponse| Router
     Router -->|JSON Response| Client
 ```
 
@@ -70,14 +76,17 @@ graph LR
     subgraph "Implementations"
         Binance["BinanceClient<br/>impl ProviderClient"]
         CryptoCom["CryptoComClient<br/>impl ProviderClient"]
+        Coinbase["CoinbaseClient<br/>impl ProviderClient"]
     end
     
     Trait -->|implemented by| Binance
     Trait -->|implemented by| CryptoCom
+    Trait -->|implemented by| Coinbase
     
     style Trait fill:#e1f5ff
     style Binance fill:#fff3e0
     style CryptoCom fill:#f3e5f5
+    style Coinbase fill:#f1f8e9
 ```
 
 ## 📊 Request Flow Diagrams
@@ -125,6 +134,11 @@ sequenceDiagram
         CryptoCom->>CryptoComAPI: Fetch Data
         CryptoComAPI-->>CryptoCom: Response
         CryptoCom-->>Provider: OrderBookResponse or Error
+    and Coinbase Query
+        Provider->>Coinbase: get_latest_order_book()
+        Coinbase->>CoinbaseAPI: Fetch Data
+        CoinbaseAPI-->>Coinbase: Response
+        Coinbase-->>Provider: OrderBookResponse or Error
     end
     Provider->>Provider: Build HashMap Results
     Provider-->>Router: Map<ProviderName, ProviderBookResult>
@@ -158,14 +172,20 @@ crypto-market-connector/
 │       │   ├── mod.rs         # Binance module export
 │       │   └── binance_client.rs  # Binance API implementation
 │       │
-│       └── crypto_com/
-│           ├── mod.rs         # Crypto.com module export
-│           └── crypto_com_client.rs  # Crypto.com API implementation
+       ├── crypto_com/
+       │   ├── mod.rs         # Crypto.com module export
+       │   └── crypto_com_client.rs  # Crypto.com API implementation
+       │
+       └── coinbase/
+           ├── mod.rs         # Coinbase module export
+           └── coinbase_client.rs  # Coinbase API implementation
 │
 ├── Cargo.toml                  # Rust dependencies & metadata
 ├── Makefile                    # Build & run commands
 ├── .env.example               # Example environment variables
-└── README.md                  # This file
+├── README.md                  # This file
+└── api/
+    └── openapi.yaml           # OpenAPI/Swagger specification
 ```
 
 ## 🔧 Technology Stack
@@ -250,6 +270,8 @@ The server will start on `http://127.0.0.1:8080`
 }
 ```
 
+**Supported Providers:** `binance`, `crypto.com`, `coinbase`
+
 **Response (Success):**
 ```json
 {
@@ -304,6 +326,16 @@ The server will start on `http://127.0.0.1:8080`
     "data": {
       "provider": "crypto_com",
       "pair": "BTC_USDT",
+      "bids": [...],
+      "asks": [...]
+    },
+    "error": null
+  },
+  "coinbase": {
+    "success": true,
+    "data": {
+      "provider": "coinbase",
+      "pair": "BTC-USDT",
       "bids": [...],
       "asks": [...]
     },
@@ -419,6 +451,7 @@ impl Clients {
         
         client_map.insert("binance".to_string(), Box::new(BinanceClient::new()));
         client_map.insert("crypto.com".to_string(), Box::new(CryptoComClient::new()));
+        client_map.insert("coinbase".to_string(), Box::new(CoinbaseClient::new()));
         client_map.insert("new_exchange".to_string(), Box::new(NewExchangeClient::new()));
         
         Self { client_map }
@@ -466,10 +499,79 @@ cargo build
 cargo check
 ```
 
-### Run tests (when implemented)
+### Run all tests
 ```bash
 cargo test
 ```
+
+### Run tests with output
+```bash
+cargo test -- --nocapture
+```
+
+### Run specific test
+```bash
+cargo test test_order_book_request_serialization
+```
+
+### Run integration tests only
+```bash
+cargo test --test integration_tests
+```
+
+### Run ignored tests (requires server running)
+```bash
+cargo test -- --ignored
+```
+
+### Unit Tests
+
+The project includes comprehensive unit tests in `tests/integration_tests.rs` covering:
+
+- **Type Serialization/Deserialization**: Verify JSON marshaling for all request/response types
+- **Error Handling**: Test error variants and display formatting
+- **Data Validation**: Ensure data structures maintain correct properties
+- **Price Precision**: Verify prices are stored as strings to prevent floating-point errors
+- **Order Book Ordering**: Confirm bids/asks are ordered correctly
+
+Example test:
+```bash
+cargo test test_order_book_response_serialization
+```
+
+### API Testing with cURL
+
+Test the `/get_pair_price` endpoint:
+```bash
+curl -X POST http://localhost:8080/get_pair_price \
+  -H "Content-Type: application/json" \
+  -d '{
+    "provider": "binance",
+    "base": "BTC",
+    "quote": "USDT",
+    "depth": 10
+  }'
+```
+
+Test the `/get_all_books` endpoint:
+```bash
+curl -X POST http://localhost:8080/get_all_books \
+  -H "Content-Type: application/json" \
+  -d '{
+    "base": "BTC",
+    "quote": "USDT",
+    "depth": 10
+  }'
+```
+
+### API Testing with Postman
+
+Import the OpenAPI specification into Postman:
+1. Open Postman
+2. Click "Import"
+3. Select "Link" tab
+4. Paste: `api/openapi.yaml`
+5. Click "Import"
 
 ### Format code
 ```bash
@@ -496,6 +598,10 @@ cargo clippy
 | `CRYPTO_COM_API_SECRET` | Required | Crypto.com API secret |
 | `CRYPTO_COM_ENV` | `testnet` | Crypto.com environment |
 | `CRYPTO_COM_API_URL` | Required | Crypto.com API base URL |
+| `CB_ACCESS_KEY` | Required | Coinbase API Access Key |
+| `CB_SECRET_KEY` | Required | Coinbase API Secret Key |
+| `CB_PASSPHRASE` | Required | Coinbase API Passphrase |
+| `COINBASE_ENV` | `testnet` | Coinbase environment (testnet/production) |
 | `RUST_LOG` | `info` | Logging level (debug/info/warn/error) |
 
 ### Production Considerations
@@ -579,7 +685,16 @@ See `Cargo.toml` for complete dependency list. Key dependencies:
 - **serde/serde_json**: JSON serialization
 - **reqwest**: HTTP client
 - **binance-sdk**: Official Binance API bindings
+- **coinbase_advanced**: Coinbase Advanced API SDK
 - **log/env_logger**: Logging infrastructure
+
+## 📚 API Documentation
+
+For detailed API specifications, see the [OpenAPI Specification](api/openapi.yaml). You can:
+
+- View the spec directly in any OpenAPI viewer
+- Import into Postman or other API clients
+- Use with Swagger UI for interactive documentation
 
 ## 📄 License
 

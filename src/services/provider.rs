@@ -1,4 +1,5 @@
 use crate::services::binance::binance_client::BinanceClient;
+use crate::services::coinbase::coinbase_client::CoinbaseClient;
 use crate::services::crypto_com::crypto_com_client::CryptoComClient;
 use crate::services::types::{
     OrderBookRequest, OrderBookResponse, ProviderBookRequest, ProviderError,
@@ -36,6 +37,9 @@ impl Clients {
 
         log::debug!("Adding Crypto.com client to registry");
         client_map.insert("crypto.com".to_string(), Box::new(CryptoComClient::new()));
+
+        log::debug!("Adding Coinbase client to registry");
+        client_map.insert("coinbase".to_string(), Box::new(CoinbaseClient::new()));
 
         log::info!(
             "Successfully initialized {} provider clients",
